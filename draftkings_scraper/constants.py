@@ -1,22 +1,3 @@
-SPORTS_WITH_DB = [
-    'NFL',
-    "MLB",
-    'NHL',
-    "MMA",
-    "GOLF",
-    "CFB",
-]
-
-SPORT_MAP = {
-    "mma": "ufc",
-    "nas": "nascar",
-    "soc": "soccer",
-    "ten": "tennis",
-    "cs:go": "csgo",
-    "cs": "csgo",
-    "ufl": "xfl",
-}
-
 # DraftKings API URLs
 LOBBY_URL = "https://www.draftkings.com/lobby/getcontests?sport=%s"
 CONTEST_API_URL = "https://api.draftkings.com/contests/v1/contests/%s?format=json"
