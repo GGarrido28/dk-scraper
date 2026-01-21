@@ -3,8 +3,6 @@ import json
 
 
 class ContestSchema(Schema):
-    """Schema for validating contest data before database insertion."""
-
     class Meta:
         unknown = EXCLUDE
 

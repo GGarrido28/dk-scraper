@@ -2,7 +2,6 @@ from marshmallow import Schema, fields, EXCLUDE
 
 
 class DraftGroupSchema(Schema):
-    """Schema for validating draft group data before database insertion."""
 
     class Meta:
         unknown = EXCLUDE

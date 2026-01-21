@@ -3,7 +3,6 @@ import json
 
 
 class PayoutSchema(Schema):
-    """Schema for validating payout data before database insertion."""
 
     class Meta:
         unknown = EXCLUDE

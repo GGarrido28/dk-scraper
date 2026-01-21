@@ -295,9 +295,9 @@ Or via CLI:
 python -m draftkings_scraper.utils.contest_adder 123456
 ```
 
-## Database Tables
+## Data
 
-The scrapers populate the following tables in the `draftkings` schema:
+The scrapers return the following tables in the `draftkings` schema:
 
 | Table | Scraper | Description |
 |-------|---------|-------------|

@@ -3,7 +3,6 @@ import json
 
 
 class GameTypeSchema(Schema):
-    """Schema for validating game type data before database insertion."""
 
     class Meta:
         unknown = EXCLUDE

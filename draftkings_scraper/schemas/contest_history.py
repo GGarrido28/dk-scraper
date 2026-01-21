@@ -2,7 +2,6 @@ from marshmallow import Schema, fields, EXCLUDE
 
 
 class ContestHistorySchema(Schema):
-    """Schema for validating contest history data before database insertion."""
 
     class Meta:
         unknown = EXCLUDE

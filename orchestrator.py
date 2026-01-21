@@ -17,7 +17,6 @@ logging.basicConfig(level=logging.INFO)
 class DraftKingsOrchestrator:
     """
     Orchestrates the full DraftKings scraping pipeline for a sport.
-    Returns all scraped data instead of inserting to database.
 
     Pipeline order:
     1. Fetch lobby data (shared across scrapers)

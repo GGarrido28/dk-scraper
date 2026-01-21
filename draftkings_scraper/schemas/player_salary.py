@@ -2,7 +2,6 @@ from marshmallow import Schema, fields, EXCLUDE
 
 
 class PlayerSalarySchema(Schema):
-    """Schema for validating player salary data before database insertion."""
 
     class Meta:
         unknown = EXCLUDE

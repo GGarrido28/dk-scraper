@@ -11,7 +11,6 @@ _http = HTTPHandler()
 def get_contest_payout(contest_id: int) -> Dict[str, Any]:
     """
     Get payout information for a single contest (for real-time lookups).
-    Does NOT write to DB - just returns the data.
 
     Args:
         contest_id: The DraftKings contest ID.
