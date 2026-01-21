@@ -41,17 +41,17 @@ def get_contest_payout(contest_id: int) -> Dict[str, Any]:
         {
             "contest_payout_id": f"{contest_id}|{row.get('minPosition')}|{row.get('maxPosition')}",
             "contest_id": contest_id,
-            "minPosition": row.get("minPosition"),
-            "maxPosition": row.get("maxPosition"),
-            "Cash": sum([x.get("value", 0) for x in row.get("payoutDescriptions", [])]),
+            "min_position": row.get("minPosition"),
+            "max_position": row.get("maxPosition"),
+            "cash": sum([x.get("value", 0) for x in row.get("payoutDescriptions", [])]),
         }
         for row in payout_summary
     ]
 
     contest_payouts_ranks = {}
     for payout in payouts:
-        for i in range(payout["minPosition"], payout["maxPosition"] + 1):
-            contest_payouts_ranks[str(i)] = payout["Cash"]
+        for i in range(payout["min_position"], payout["max_position"] + 1):
+            contest_payouts_ranks[str(i)] = payout["cash"]
 
     sport = contest_detail.get("sport", "").lower()
 

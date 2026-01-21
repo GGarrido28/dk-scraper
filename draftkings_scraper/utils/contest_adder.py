@@ -9,7 +9,6 @@ from typing import Dict, Any, Optional, List
 from bs4 import BeautifulSoup
 
 from draftkings_scraper.constants import (
-    SPORT_MAP,
     LOBBY_URL,
     CONTEST_API_URL,
     DRAFT_URL,
@@ -232,7 +231,6 @@ class ContestAdder:
             contest_detail = contest_data["contestDetail"]
 
             sport = contest_detail.get("sport", "").lower()
-            sport = SPORT_MAP.get(sport, sport)
 
             if not sport:
                 self.logger.warning(f"Could not determine sport for contest {contest_id}")
