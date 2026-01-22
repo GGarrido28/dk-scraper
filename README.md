@@ -29,7 +29,7 @@ A modular Python scraper for collecting DraftKings fantasy sports data. Scrapes 
 
 ```bash
 # Clone the repository
-git clone https://github.com/GGarrido28/draftkings-scraper.git
+git clone https://github.com/GGarrido28/dk-scraper.git
 cd draftkings-scraper
 
 # Install dependencies
