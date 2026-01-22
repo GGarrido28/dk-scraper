@@ -9,9 +9,6 @@ from typing import List, Dict, Any
 
 from marshmallow import ValidationError
 
-from mg.db.postgres_manager import PostgresManager
-from mg.logging.logger_manager import LoggerManager
-
 from draftkings_scraper.schemas import PlayerSalarySchema
 from draftkings_scraper.constants import PLAYER_CSV_URL
 from draftkings_scraper.http_handler import HTTPHandler
@@ -23,28 +20,14 @@ logging.basicConfig(level=logging.INFO)
 class PlayerSalaryScraper:
     """
     Scraper for DraftKings player salary data.
-    Populates the draftkings.player_salary table.
-    Requires draft_group_ids from DraftGroupsScraper.
+    Returns validated player salary data.
     """
 
     def __init__(self, sport: str):
         self.sport = sport
         self.script_name = os.path.basename(__file__)
         self.script_path = os.path.dirname(__file__)
-        self.logger = LoggerManager(
-            self.script_name,
-            self.script_path,
-            sport=sport,
-            database="defaultdb",
-            schema="draftkings",
-        )
-        self.logger.log_exceptions()
-
-        self.database = "defaultdb"
-        self.schema = "draftkings"
-        self.draftkings_connection = PostgresManager(
-            "digital_ocean", self.database, self.schema, return_logging=False
-        )
+        self.logger = logging.getLogger(__name__)
 
         self.player_salary_schema = PlayerSalarySchema()
         self.player_csv_url = PLAYER_CSV_URL
@@ -52,16 +35,11 @@ class PlayerSalaryScraper:
         # HTTP handler with retry logic
         self.http = HTTPHandler()
 
-    def _update_player_salaries(
+    def _fetch_player_salaries(
         self, draft_group_ids: List[int]
     ) -> List[Dict[str, Any]]:
-        """Update player_salary table for given draft group IDs.
-
-        Returns:
-            list: List of validated player salary dictionaries that were inserted.
-        """
-        msg = f"Collecting player csvs for {self.sport}."
-        self.logger.log(level="info", message=msg)
+        """Fetch player salary data for given draft group IDs."""
+        self.logger.info(f"Collecting player csvs for {self.sport}.")
 
         players_list = []
         skipped_draft_groups = []
@@ -104,14 +82,11 @@ class PlayerSalaryScraper:
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 404:
                     skipped_draft_groups.append(dg)
-                    msg = f"Draft group {dg} not found (404). Skipping."
-                    self.logger.log(level="data", message=msg)
+                    self.logger.info(f"Draft group {dg} not found (404). Skipping.")
                 else:
-                    msg = f"Error fetching player CSV for draft group {dg}: {str(e)}"
-                    self.logger.log(level="error", message=msg)
+                    self.logger.error(f"Error fetching player CSV for draft group {dg}: {str(e)}")
             except Exception as e:
-                msg = f"Error processing player CSV for draft group {dg}: {str(e)}"
-                self.logger.log(level="error", message=msg)
+                self.logger.error(f"Error processing player CSV for draft group {dg}: {str(e)}")
 
         validated_players = []
         validation_errors = []
@@ -144,29 +119,17 @@ class PlayerSalaryScraper:
                 )
 
         if validation_errors:
-            # Group errors by draft group for clearer logging
             errors_by_dg = {}
             for err in validation_errors:
                 dg = err["draft_group_id"]
                 errors_by_dg[dg] = errors_by_dg.get(dg, 0) + 1
             for dg, count in errors_by_dg.items():
-                msg = f"Draft group {dg}: skipped {count} players due to validation errors."
-                self.logger.log(level="warning", message=msg)
+                self.logger.warning(f"Draft group {dg}: skipped {count} players due to validation errors.")
 
-        if validated_players:
-            self.draftkings_connection.insert_rows(
-                "player_salary",
-                validated_players[0].keys(),
-                validated_players,
-                contains_dicts=True,
-                update=True,
-            )
-            msg = f"Imported {len(validated_players)} player salaries for {self.sport}."
-            self.logger.log(level="info", message=msg)
+        self.logger.info(f"Fetched {len(validated_players)} player salaries for {self.sport}.")
 
         if skipped_draft_groups:
-            msg = f"Skipped {len(skipped_draft_groups)} draft groups due to 404 errors."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Skipped {len(skipped_draft_groups)} draft groups due to 404 errors.")
 
         return validated_players
 
@@ -178,53 +141,29 @@ class PlayerSalaryScraper:
             draft_group_ids: List of draft group IDs to scrape player salaries for.
 
         Returns:
-            list: List of validated player salary dictionaries that were inserted.
+            list: List of validated player salary dictionaries.
         """
         start_time = datetime.datetime.now()
         players = []
 
         try:
-            msg = f"Starting player salary scraper for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Starting player salary scraper for {self.sport}.")
 
             if draft_group_ids:
-                players = self._update_player_salaries(draft_group_ids)
+                players = self._fetch_player_salaries(draft_group_ids)
             else:
-                msg = f"No draft group IDs provided."
-                self.logger.log(level="info", message=msg)
+                self.logger.info("No draft group IDs provided.")
 
-            msg = f"Finished scraping player salaries for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Finished scraping player salaries for {self.sport}.")
 
             elapsed_time = datetime.datetime.now() - start_time
-            msg = f"Total time elapsed: {elapsed_time}"
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Total time elapsed: {elapsed_time}")
 
         except Exception as e:
-            msg = f"Failed player salary scraper: {e}"
-            self.logger.log(level="error", message=msg)
+            self.logger.error(f"Failed player salary scraper: {e}")
             raise e
 
-        finally:
-            if self.logger.warning_logs or self.logger.error_logs:
-                logs = sorted(
-                    list(set(self.logger.warning_logs))
-                    + list(set(self.logger.error_logs))
-                )
-                logs_str = ",".join(logs)
-                self.logger.check_alert_log(
-                    alert_name=f"Error processing player salary data for {self.sport}",
-                    alert_description=f"Error processing player salary data: {logs_str}",
-                    review_script=self.script_name,
-                    review_table="draftkings.player_salary",
-                )
-            self._close_sql_connections()
-
         return players
-
-    def _close_sql_connections(self):
-        self.logger.close_logger()
-        self.draftkings_connection.close()
 
 
 def main():
@@ -244,8 +183,9 @@ def main():
         ]
 
     scraper = PlayerSalaryScraper(sport=args.sport)
-    scraper.scrape(draft_group_ids=draft_group_ids)
+    result = scraper.scrape(draft_group_ids=draft_group_ids)
+    print(f"Scraped {len(result)} player salaries")
 
 
 if __name__ == "__main__":
-   main()
+    main()

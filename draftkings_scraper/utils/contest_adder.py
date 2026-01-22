@@ -4,15 +4,11 @@ import datetime
 import logging
 import os
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from bs4 import BeautifulSoup
 
-from mg.db.postgres_manager import PostgresManager
-from mg.logging.logger_manager import LoggerManager
-
 from draftkings_scraper.constants import (
-    SPORT_MAP,
     LOBBY_URL,
     CONTEST_API_URL,
     DRAFT_URL,
@@ -32,27 +28,14 @@ logging.basicConfig(level=logging.INFO)
 
 class ContestAdder:
     """
-    Utility class for adding a single contest to the database by ID.
-    Composes existing scrapers to insert related records (contest, draft group, payouts, player salaries).
+    Utility class for fetching a single contest's data by ID.
+    Returns all related data (contest, draft group, payouts, player salaries).
     """
 
     def __init__(self):
         self.script_name = os.path.basename(__file__)
         self.script_path = os.path.dirname(__file__)
-        self.logger = LoggerManager(
-            self.script_name,
-            self.script_path,
-            sport=None,
-            database="defaultdb",
-            schema="draftkings",
-        )
-        self.logger.log_exceptions()
-
-        self.database = "defaultdb"
-        self.schema = "draftkings"
-        self.draftkings_connection = PostgresManager(
-            "digital_ocean", self.database, self.schema, return_logging=False
-        )
+        self.logger = logging.getLogger(__name__)
 
         # API URLs
         self.contest_url = CONTEST_API_URL
@@ -74,147 +57,18 @@ class ContestAdder:
             if draft_group_match:
                 return int(draft_group_match.group(1))
         except Exception as e:
-            msg = f"Error extracting draft group ID from page: {e}"
-            self.logger.log(level="warning", message=msg)
+            self.logger.warning(f"Error extracting draft group ID from page: {e}")
 
         return None
 
-    def add_contest(self, contest_id: int) -> Dict[str, Any]:
-        """
-        Add a single contest to the database with all related data.
-
-        Fetches contest data from API and lobby, then inserts:
-        - Contest record
-        - Draft group record
-        - Payout records
-        - Player salary records
-
-        Args:
-            contest_id: The DraftKings contest ID to add.
-
-        Returns:
-            dict: Status information including contest_id, status, sport, draft_group_id.
-        """
-        try:
-            # Step 1: Get basic contest info from API to determine sport
-            contest_response = self.http.get(self.contest_url % contest_id)
-            contest_response.raise_for_status()
-            contest_data = json.loads(contest_response.text)
-
-            if not contest_data or "contestDetail" not in contest_data:
-                msg = f"No contest data found for contest {contest_id}"
-                self.logger.log(level="warning", message=msg)
-                return {"contest_id": contest_id, "status": "not_found"}
-
-            contest_detail = contest_data["contestDetail"]
-
-            # Extract and map sport
-            sport = contest_detail.get("sport", "").lower()
-            sport = SPORT_MAP.get(sport, sport)
-
-            if not sport:
-                msg = f"Could not determine sport for contest {contest_id}"
-                self.logger.log(level="warning", message=msg)
-                return {
-                    "contest_id": contest_id,
-                    "status": "error",
-                    "message": "Sport not found",
-                }
-
-            msg = f"Fetching lobby data for sport {sport} to find contest {contest_id}"
-            self.logger.log(level="info", message=msg)
-
-            # Step 2: Fetch lobby data
-            try:
-                with urllib.request.urlopen(self.lobby_url % sport) as url:
-                    lobby_data = json.loads(url.read().decode())
-            except Exception as e:
-                msg = f"Error fetching lobby data for sport {sport}: {str(e)}"
-                self.logger.log(level="error", message=msg)
-                lobby_data = {"Contests": [], "DraftGroups": [], "GameTypes": []}
-
-            # Step 3: Find contest in lobby data
-            contest_found = False
-            contest_info = None
-            draft_group_id = None
-
-            for contest in lobby_data.get("Contests", []):
-                if contest["id"] == contest_id:
-                    contest_found = True
-                    contest_info = contest
-                    draft_group_id = contest["dg"]
-                    break
-
-            # Try to get draft_group_id from other sources if not found
-            if not contest_found:
-                if "draftGroupId" in contest_detail:
-                    draft_group_id = contest_detail["draftGroupId"]
-                else:
-                    draft_group_id = self._extract_draft_group_id_from_page(contest_id)
-                    if draft_group_id:
-                        msg = (
-                            f"Extracted draft group ID {draft_group_id} from draft page"
-                        )
-                        self.logger.log(level="info", message=msg)
-                    else:
-                        draft_group_id = 0
-
-            # Step 4: Insert contest record
-            if contest_found:
-                self._insert_contest_from_lobby(
-                    contest_id, contest_info, contest_detail, draft_group_id
-                )
-            else:
-                msg = f"Contest {contest_id} not found in lobby. Using partial data from contest API."
-                self.logger.log(level="warning", message=msg)
-                self._insert_contest_from_api(
-                    contest_id, contest_detail, draft_group_id
-                )
-
-            # Step 5: Insert draft group if found in lobby
-            if contest_found and draft_group_id:
-                for dg in lobby_data.get("DraftGroups", []):
-                    if dg["DraftGroupId"] == draft_group_id:
-                        self._insert_draft_group(dg, sport)
-                        break
-            elif draft_group_id and draft_group_id > 0:
-                self._insert_minimal_draft_group(draft_group_id, sport, contest_detail)
-
-            # Step 6: Process payouts using PayoutScraper
-            if "payoutSummary" in contest_detail and contest_detail["payoutSummary"]:
-                self._process_payouts(contest_id, sport)
-
-            # Step 7: Process player salaries using PlayerSalaryScraper
-            if draft_group_id and draft_group_id > 0:
-                self._process_player_salaries(draft_group_id, sport)
-
-            msg = f"Added contest {contest_id} to database."
-            self.logger.log(level="info", message=msg)
-
-            return {
-                "contest_id": contest_id,
-                "status": "added",
-                "sport": sport,
-                "draft_group_id": draft_group_id,
-                "from_lobby": contest_found,
-            }
-
-        except Exception as e:
-            msg = f"Error adding contest {contest_id} to database: {str(e)}"
-            self.logger.log(level="error", message=msg)
-            return {"contest_id": contest_id, "status": "error", "message": str(e)}
-
-        finally:
-            self._close_sql_connections()
-
-    def _insert_contest_from_lobby(
+    def _parse_contest_from_lobby(
         self,
         contest_id: int,
         contest_info: Dict[str, Any],
         contest_detail: Dict[str, Any],
         draft_group_id: int,
-    ) -> None:
-        """Insert contest using complete lobby data."""
+    ) -> Dict[str, Any]:
+        """Parse contest using complete lobby data."""
         contest_attributes_map = {
             "IsGuaranteed": "guranteed",
             "IsStarred": "starred",
@@ -236,9 +90,9 @@ class ContestAdder:
             "max_entries": contest_info.get("m", 0),
             "entries_per_user": contest_info.get("mec", 0),
             "draft_group_id": draft_group_id,
-            "pd": json.dumps(contest_info.get("pd", {})),
+            "pd": contest_info.get("pd", {}),
             "po": contest_info.get("po", 0),
-            "attr": json.dumps(contest_info.get("attr", [])),
+            "attr": contest_info.get("attr", []),
             "contest_date": contest_info.get("sdstring", ""),
             "contest_url": f"https://www.draftkings.com/draft/contest/{contest_id}",
             "is_downloaded": False,
@@ -248,17 +102,12 @@ class ContestAdder:
         }
         contest.update(atts_dict)
 
-        self.draftkings_connection.insert_rows(
-            "contests", contest.keys(), [contest], contains_dicts=True, update=True
-        )
+        return contest
 
-        msg = f"Added contest {contest_id} with complete lobby data."
-        self.logger.log(level="info", message=msg)
-
-    def _insert_contest_from_api(
+    def _parse_contest_from_api(
         self, contest_id: int, contest_detail: Dict[str, Any], draft_group_id: int
-    ) -> None:
-        """Insert contest using partial API data."""
+    ) -> Dict[str, Any]:
+        """Parse contest using partial API data."""
         attr_dict = {}
         feature_list = contest_detail.get("features", [])
         for feature in feature_list:
@@ -278,11 +127,11 @@ class ContestAdder:
             "max_entries": contest_detail.get("maximumEntries", 0),
             "entries_per_user": contest_detail.get("maximumEntriesPerUser", 0),
             "draft_group_id": draft_group_id,
-            "pd": json.dumps(contest_detail.get("prizeDescription", {})),
+            "pd": contest_detail.get("prizeDescription", {}),
             "po": contest_detail.get(
                 "prizePool", contest_detail.get("totalPayouts", 0)
             ),
-            "attr": json.dumps(attr_dict),
+            "attr": attr_dict,
             "guranteed": "IsGuaranteed" in attr_dict,
             "starred": "IsStarred" in attr_dict,
             "double_up": "IsDoubleUp" in attr_dict,
@@ -298,12 +147,10 @@ class ContestAdder:
             "is_downloaded": False,
         }
 
-        self.draftkings_connection.insert_rows(
-            "contests", contest.keys(), [contest], contains_dicts=True, update=True
-        )
+        return contest
 
-    def _insert_draft_group(self, draft_group: Dict[str, Any], sport: str) -> None:
-        """Insert draft group from lobby data."""
+    def _parse_draft_group(self, draft_group: Dict[str, Any], sport: str) -> Dict[str, Any]:
+        """Parse draft group from lobby data."""
         contest_start_time_suffix = draft_group.get("ContestStartTimeSuffix")
         if contest_start_time_suffix:
             contest_start_time_suffix = contest_start_time_suffix.strip()
@@ -331,17 +178,12 @@ class ContestAdder:
             "start_date_est": draft_group["StartDateEst"],
         }
 
-        self.draftkings_connection.insert_rows(
-            "draft_groups", dg.keys(), [dg], contains_dicts=True, update=True
-        )
+        return dg
 
-        msg = f"Added draft group {draft_group['DraftGroupId']}."
-        self.logger.log(level="info", message=msg)
-
-    def _insert_minimal_draft_group(
+    def _parse_minimal_draft_group(
         self, draft_group_id: int, sport: str, contest_detail: Dict[str, Any]
-    ) -> None:
-        """Insert minimal draft group when not found in lobby."""
+    ) -> Dict[str, Any]:
+        """Parse minimal draft group when not found in lobby."""
         draft_group = {
             "draft_group_id": draft_group_id,
             "sport": sport,
@@ -356,67 +198,131 @@ class ContestAdder:
             "game_type": contest_detail.get("gameType", ""),
         }
 
-        self.draftkings_connection.insert_rows(
-            "draft_groups",
-            draft_group.keys(),
-            [draft_group],
-            contains_dicts=True,
-            update=True,
-        )
+        return draft_group
 
-    def _process_payouts(self, contest_id: int, sport: str) -> None:
-        """Process payouts using PayoutScraper."""
+    def get_contest(self, contest_id: int) -> Dict[str, Any]:
+        """
+        Get a single contest's data by ID with all related data.
+
+        Args:
+            contest_id: The DraftKings contest ID to fetch.
+
+        Returns:
+            dict: Contains contest, draft_group, payouts, player_salaries data.
+        """
+        result = {
+            "contest_id": contest_id,
+            "status": "not_found",
+            "contest": None,
+            "draft_group": None,
+            "payouts": [],
+            "player_salaries": [],
+        }
+
         try:
-            # Check if payout already exists
-            q = f"SELECT contest_id FROM draftkings.payout WHERE contest_id = {contest_id}"
-            existing = self.draftkings_connection.execute(q)
-            if existing:
-                msg = f"Payout for contest {contest_id} already exists."
-                self.logger.log(level="info", message=msg)
-                return
+            contest_response = self.http.get(self.contest_url % contest_id)
+            contest_response.raise_for_status()
+            contest_data = json.loads(contest_response.text)
 
-            payout_scraper = PayoutScraper(sport=sport)
-            payout_scraper.scrape(contest_ids=[contest_id])
+            if not contest_data or "contestDetail" not in contest_data:
+                self.logger.warning(f"No contest data found for contest {contest_id}")
+                return result
+
+            contest_detail = contest_data["contestDetail"]
+
+            sport = contest_detail.get("sport", "").lower()
+
+            if not sport:
+                self.logger.warning(f"Could not determine sport for contest {contest_id}")
+                result["status"] = "error"
+                result["message"] = "Sport not found"
+                return result
+
+            self.logger.info(f"Fetching lobby data for sport {sport} to find contest {contest_id}")
+
+            try:
+                with urllib.request.urlopen(self.lobby_url % sport) as url:
+                    lobby_data = json.loads(url.read().decode())
+            except Exception as e:
+                self.logger.error(f"Error fetching lobby data for sport {sport}: {str(e)}")
+                lobby_data = {"Contests": [], "DraftGroups": [], "GameTypes": []}
+
+            contest_found = False
+            contest_info = None
+            draft_group_id = None
+
+            for contest in lobby_data.get("Contests", []):
+                if contest["id"] == contest_id:
+                    contest_found = True
+                    contest_info = contest
+                    draft_group_id = contest["dg"]
+                    break
+
+            if not contest_found:
+                if "draftGroupId" in contest_detail:
+                    draft_group_id = contest_detail["draftGroupId"]
+                else:
+                    draft_group_id = self._extract_draft_group_id_from_page(contest_id)
+                    if draft_group_id:
+                        self.logger.info(f"Extracted draft group ID {draft_group_id} from draft page")
+                    else:
+                        draft_group_id = 0
+
+            if contest_found:
+                result["contest"] = self._parse_contest_from_lobby(
+                    contest_id, contest_info, contest_detail, draft_group_id
+                )
+            else:
+                self.logger.warning(f"Contest {contest_id} not found in lobby. Using partial data from contest API.")
+                result["contest"] = self._parse_contest_from_api(
+                    contest_id, contest_detail, draft_group_id
+                )
+
+            if contest_found and draft_group_id:
+                for dg in lobby_data.get("DraftGroups", []):
+                    if dg["DraftGroupId"] == draft_group_id:
+                        result["draft_group"] = self._parse_draft_group(dg, sport)
+                        break
+            elif draft_group_id and draft_group_id > 0:
+                result["draft_group"] = self._parse_minimal_draft_group(draft_group_id, sport, contest_detail)
+
+            if "payoutSummary" in contest_detail and contest_detail["payoutSummary"]:
+                payout_scraper = PayoutScraper(sport=sport)
+                result["payouts"] = payout_scraper.scrape(contest_ids=[contest_id])
+
+            if draft_group_id and draft_group_id > 0:
+                player_salary_scraper = PlayerSalaryScraper(sport=sport)
+                result["player_salaries"] = player_salary_scraper.scrape(draft_group_ids=[draft_group_id])
+
+            result["status"] = "success"
+            result["sport"] = sport
+            result["draft_group_id"] = draft_group_id
+            result["from_lobby"] = contest_found
+
+            self.logger.info(f"Fetched contest {contest_id} data.")
+
+            return result
+
         except Exception as e:
-            msg = f"Error processing payouts for contest {contest_id}: {e}"
-            self.logger.log(level="warning", message=msg)
-
-    def _process_player_salaries(self, draft_group_id: int, sport: str) -> None:
-        """Process player salaries using PlayerSalaryScraper."""
-        try:
-            # Check if player salaries already exist for this draft group
-            q = f"SELECT COUNT(*) as count FROM draftkings.player_salary WHERE draft_group_id = {draft_group_id}"
-            result = self.draftkings_connection.execute(q)
-            if result and result[0]["count"] > 0:
-                msg = f"Player salaries for draft group {draft_group_id} already exist."
-                self.logger.log(level="info", message=msg)
-                return
-
-            player_salary_scraper = PlayerSalaryScraper(sport=sport)
-            player_salary_scraper.scrape(draft_group_ids=[draft_group_id])
-        except Exception as e:
-            msg = f"Error processing player salaries for draft group {draft_group_id}: {e}"
-            self.logger.log(level="warning", message=msg)
-
-    def _close_sql_connections(self) -> None:
-        """Close database connections."""
-        self.logger.close_logger()
-        self.draftkings_connection.close()
+            self.logger.error(f"Error fetching contest {contest_id}: {str(e)}")
+            result["status"] = "error"
+            result["message"] = str(e)
+            return result
 
 
 def main():
-    """CLI entry point for adding a contest."""
+    """CLI entry point for fetching a contest."""
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Add a single DraftKings contest to the database."
+        description="Fetch a single DraftKings contest's data."
     )
-    parser.add_argument("contest_id", type=int, help="The contest ID to add")
+    parser.add_argument("contest_id", type=int, help="The contest ID to fetch")
 
     args = parser.parse_args()
 
     adder = ContestAdder()
-    result = adder.add_contest(args.contest_id)
+    result = adder.get_contest(args.contest_id)
     print(json.dumps(result, indent=2, default=str))
 
 

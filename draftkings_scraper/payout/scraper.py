@@ -12,9 +12,6 @@ from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
 from marshmallow import ValidationError
 
-from mg.db.postgres_manager import PostgresManager
-from mg.logging.logger_manager import LoggerManager
-
 from draftkings_scraper.schemas import PayoutSchema
 from draftkings_scraper.constants import DRAFT_URL
 from draftkings_scraper.http_handler import HTTPHandler
@@ -26,28 +23,14 @@ logging.basicConfig(level=logging.INFO)
 class PayoutScraper:
     """
     Scraper for DraftKings contest payout data.
-    Populates the draftkings.payout table.
-    Requires contest_ids from ContestsScraper.
+    Returns validated payout data.
     """
 
     def __init__(self, sport: str):
         self.sport = sport
         self.script_name = os.path.basename(__file__)
         self.script_path = os.path.dirname(__file__)
-        self.logger = LoggerManager(
-            self.script_name,
-            self.script_path,
-            sport=sport,
-            database="defaultdb",
-            schema="draftkings",
-        )
-        self.logger.log_exceptions()
-
-        self.database = "defaultdb"
-        self.schema = "draftkings"
-        self.draftkings_connection = PostgresManager(
-            "digital_ocean", self.database, self.schema, return_logging=False
-        )
+        self.logger = logging.getLogger(__name__)
 
         self.payout_schema = PayoutSchema()
         self.draft_url = DRAFT_URL
@@ -134,16 +117,13 @@ class PayoutScraper:
 
         except requests.HTTPError as http_err:
             if http_err.response.status_code == 404:
-                msg = f"Contest {contest_id} not found (404)"
-                self.logger.log(level="info", message=msg)
+                self.logger.info(f"Contest {contest_id} not found (404)")
             else:
-                msg = f"HTTP error for contest {contest_id}: {str(http_err)}"
-                self.logger.log(level="error", message=msg)
+                self.logger.error(f"HTTP error for contest {contest_id}: {str(http_err)}")
             return None
 
         except Exception as e:
-            msg = f"Error scraping contest {contest_id}: {str(e)}"
-            self.logger.log(level="error", message=msg)
+            self.logger.error(f"Error scraping contest {contest_id}: {str(e)}")
             return None
 
     def _scrape_contest_payouts_batch(self, contest_ids, batch_size=10):
@@ -151,8 +131,7 @@ class PayoutScraper:
 
         for i in range(0, len(contest_ids), batch_size):
             batch = contest_ids[i : i + batch_size]
-            msg = f"Processing batch of {len(batch)} contests ({i+1}-{i+len(batch)} of {len(contest_ids)})"
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Processing batch of {len(batch)} contests ({i+1}-{i+len(batch)} of {len(contest_ids)})")
 
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=batch_size
@@ -171,51 +150,18 @@ class PayoutScraper:
                         if payouts:
                             all_payouts.extend(payouts)
                     except Exception as e:
-                        msg = f"Error processing contest {contest_id}: {str(e)}"
-                        self.logger.log(level="error", message=msg)
+                        self.logger.error(f"Error processing contest {contest_id}: {str(e)}")
 
             if i + batch_size < len(contest_ids):
                 time.sleep(1)
 
         return all_payouts
 
-    def _update_payouts(self, contest_ids: List[int]) -> List[Dict[str, Any]]:
-        """Update payout table for given contest IDs.
+    def _fetch_payouts(self, contest_ids: List[int]) -> List[Dict[str, Any]]:
+        """Fetch payout data for given contest IDs."""
+        self.logger.info(f"Fetching payouts for {len(contest_ids)} contests.")
 
-        Returns:
-            list: List of validated payout dictionaries that were inserted.
-        """
-        msg = f"Checking for contest payouts."
-        self.logger.log(level="info", message=msg)
-
-        # Get existing payouts
-        existing_payouts = set()
-        if contest_ids:
-            for i in range(0, len(contest_ids), 1000):
-                chunk = contest_ids[i : i + 1000]
-                q = """
-                SELECT contest_id
-                FROM draftkings.payout
-                WHERE contest_id IN %(contest_ids)s
-                """
-                results = self.draftkings_connection.execute(
-                    q, params={"contest_ids": tuple(chunk)}
-                )
-                existing_payouts.update(r["contest_id"] for r in results)
-
-        contests_to_process = [
-            cid for cid in contest_ids if cid not in existing_payouts
-        ]
-
-        if not contests_to_process:
-            msg = f"No new contest payouts to process."
-            self.logger.log(level="info", message=msg)
-            return []
-
-        msg = f"Processing payouts for {len(contests_to_process)} contests."
-        self.logger.log(level="info", message=msg)
-
-        all_payouts = self._scrape_contest_payouts_batch(contests_to_process)
+        all_payouts = self._scrape_contest_payouts_batch(contest_ids)
 
         validated_payouts = []
         validation_errors = []
@@ -230,111 +176,46 @@ class PayoutScraper:
                 )
 
         if validation_errors:
-            msg = f"Skipped {len(validation_errors)} payouts due to validation errors."
-            self.logger.log(level="warning", message=msg)
+            self.logger.warning(f"Skipped {len(validation_errors)} payouts due to validation errors.")
 
-        if validated_payouts:
-            CHUNK_SIZE = 500
-            for i in range(0, len(validated_payouts), CHUNK_SIZE):
-                chunk = validated_payouts[i : i + CHUNK_SIZE]
-                self.draftkings_connection.insert_rows(
-                    "payout", chunk[0].keys(), chunk, contains_dicts=True, update=True
-                )
-
-            msg = f"Imported {len(validated_payouts)} payouts."
-            self.logger.log(level="info", message=msg)
-
-        if existing_payouts:
-            msg = f"Skipped {len(existing_payouts)} existing payouts."
-            self.logger.log(level="info", message=msg)
+        self.logger.info(f"Fetched {len(validated_payouts)} payouts.")
 
         return validated_payouts
-
-    def _get_contest_ids_for_draft_group(self, draft_group_id: int) -> List[int]:
-        """Get contest IDs associated with a draft group from the database.
-
-        Args:
-            draft_group_id: The draft group ID to look up contests for.
-
-        Returns:
-            list: List of contest IDs for the draft group.
-        """
-        q = """
-        SELECT contest_id
-        FROM draftkings.contests
-        WHERE draft_group_id = %(draft_group_id)s
-        """
-        results = self.draftkings_connection.execute(
-            q, params={"draft_group_id": draft_group_id}
-        )
-        return [r["contest_id"] for r in results]
 
     def scrape(
         self,
         contest_ids: Optional[List[int]] = None,
-        draft_group_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Main scraping method for payouts.
 
         Args:
             contest_ids: List of contest IDs to scrape payouts for.
-            draft_group_id: Optional draft group ID to look up contests for.
 
         Returns:
-            list: List of validated payout dictionaries that were inserted.
+            list: List of validated payout dictionaries.
         """
         start_time = datetime.datetime.now()
         payouts = []
 
         try:
-            msg = f"Starting payout scraper for {self.sport}."
-            self.logger.log(level="info", message=msg)
-
-            # Get contest IDs from draft_group_id if provided
-            if draft_group_id and not contest_ids:
-                contest_ids = self._get_contest_ids_for_draft_group(draft_group_id)
-                msg = f"Found {len(contest_ids)} contests for draft group {draft_group_id}."
-                self.logger.log(level="info", message=msg)
+            self.logger.info(f"Starting payout scraper for {self.sport}.")
 
             if contest_ids:
-                payouts = self._update_payouts(contest_ids)
+                payouts = self._fetch_payouts(contest_ids)
             else:
-                msg = f"No contest IDs provided or found."
-                self.logger.log(level="info", message=msg)
+                self.logger.info("No contest IDs provided.")
 
-            msg = f"Finished scraping payouts for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Finished scraping payouts for {self.sport}.")
 
             elapsed_time = datetime.datetime.now() - start_time
-            msg = f"Total time elapsed: {elapsed_time}"
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Total time elapsed: {elapsed_time}")
 
         except Exception as e:
-            msg = f"Failed payout scraper: {e}"
-            self.logger.log(level="error", message=msg)
+            self.logger.error(f"Failed payout scraper: {e}")
             raise e
 
-        finally:
-            if self.logger.warning_logs or self.logger.error_logs:
-                logs = sorted(
-                    list(set(self.logger.warning_logs))
-                    + list(set(self.logger.error_logs))
-                )
-                logs_str = ",".join(logs)
-                self.logger.check_alert_log(
-                    alert_name=f"Error processing payout data for {self.sport}",
-                    alert_description=f"Error processing payout data: {logs_str}",
-                    review_script=self.script_name,
-                    review_table="draftkings.payout",
-                )
-            self._close_sql_connections()
-
         return payouts
-
-    def _close_sql_connections(self):
-        self.logger.close_logger()
-        self.draftkings_connection.close()
 
 
 def main():
@@ -343,9 +224,6 @@ def main():
     )
     parser.add_argument("sport", type=str, help="Sport code (e.g., NFL, MLB, MMA)")
     parser.add_argument("--contest-ids", type=str, help="Comma-separated contest IDs")
-    parser.add_argument(
-        "--draft-group-id", type=int, help="Draft group ID to look up contests for"
-    )
     args = parser.parse_args()
 
     contest_ids = None
@@ -353,7 +231,8 @@ def main():
         contest_ids = [int(cid.strip()) for cid in args.contest_ids.split(",")]
 
     scraper = PayoutScraper(sport=args.sport)
-    scraper.scrape(contest_ids=contest_ids, draft_group_id=args.draft_group_id)
+    result = scraper.scrape(contest_ids=contest_ids)
+    print(f"Scraped {len(result)} payouts")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-import json
 import datetime
 import logging
 import os
@@ -6,9 +5,6 @@ import argparse
 from typing import List, Dict, Any, Optional
 
 from marshmallow import ValidationError
-
-from mg.db.postgres_manager import PostgresManager
-from mg.logging.logger_manager import LoggerManager
 
 from draftkings_scraper.contests import ContestsScraper
 from draftkings_scraper.schemas import GameTypeSchema
@@ -20,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 class GameTypesScraper:
     """
     Scraper for DraftKings game types data.
-    Populates the draftkings.game_types table.
+    Returns validated game type data.
     Uses lobby data from ContestsScraper.
     """
 
@@ -34,20 +30,7 @@ class GameTypesScraper:
         self.sport = sport
         self.script_name = os.path.basename(__file__)
         self.script_path = os.path.dirname(__file__)
-        self.logger = LoggerManager(
-            self.script_name,
-            self.script_path,
-            sport=sport,
-            database="defaultdb",
-            schema="draftkings",
-        )
-        self.logger.log_exceptions()
-
-        self.database = "defaultdb"
-        self.schema = "draftkings"
-        self.draftkings_connection = PostgresManager(
-            "digital_ocean", self.database, self.schema, return_logging=False
-        )
+        self.logger = logging.getLogger(__name__)
 
         # Schema for validation
         self.game_type_schema = GameTypeSchema()
@@ -55,16 +38,11 @@ class GameTypesScraper:
         # Initialize contests scraper for fetching lobby data
         self.contests_scraper = ContestsScraper(sport=sport)
 
-    def _update_game_types(
+    def _parse_game_types(
         self, raw_game_types: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Update game_types table with data from DraftKings API.
-
-        Returns:
-            list: List of validated game type dictionaries that were inserted.
-        """
-        msg = f"Updating Game Types for {self.sport}."
-        self.logger.log(level="info", message=msg)
+        """Parse and validate game types data from DraftKings API."""
+        self.logger.info(f"Parsing Game Types for {self.sport}.")
 
         game_types = []
         validation_errors = []
@@ -80,7 +58,6 @@ class GameTypesScraper:
                 "game_style": game_type["GameStyle"],
             }
 
-            # Validate with schema
             try:
                 validated_game_type = self.game_type_schema.load(gt)
                 game_types.append(validated_game_type)
@@ -88,26 +65,12 @@ class GameTypesScraper:
                 validation_errors.append(
                     {"game_type_id": game_type["GameTypeId"], "errors": err.messages}
                 )
-                msg = f"Validation error for game_type {game_type['GameTypeId']}: {err.messages}"
-                self.logger.log(level="warning", message=msg)
+                self.logger.warning(f"Validation error for game_type {game_type['GameTypeId']}: {err.messages}")
 
         if validation_errors:
-            msg = (
-                f"Skipped {len(validation_errors)} game types due to validation errors."
-            )
-            self.logger.log(level="warning", message=msg)
+            self.logger.warning(f"Skipped {len(validation_errors)} game types due to validation errors.")
 
-        if game_types:
-            game_type_cols = list(game_types[0].keys())
-            self.draftkings_connection.insert_rows(
-                "game_types",
-                game_type_cols,
-                game_types,
-                contains_dicts=True,
-                update=True,
-            )
-            msg = f"Updated {len(game_types)} game types for {self.sport}."
-            self.logger.log(level="info", message=msg)
+        self.logger.info(f"Parsed {len(game_types)} game types for {self.sport}.")
 
         return game_types
 
@@ -116,65 +79,38 @@ class GameTypesScraper:
     ) -> List[Dict[str, Any]]:
         """
         Main scraping method for game types.
-        Uses lobby data (from ContestsScraper) to update the game_types table.
+        Uses lobby data (from ContestsScraper) to parse game types.
 
         Args:
             lobby_data: Optional pre-fetched lobby data. If None, fetches from API.
 
         Returns:
-            list: List of validated game type dictionaries that were inserted.
+            list: List of validated game type dictionaries.
         """
         start_time = datetime.datetime.now()
         game_types = []
 
         try:
-            msg = f"Starting game types scraper for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Starting game types scraper for {self.sport}.")
 
-            # Fetch lobby data if not provided
             if lobby_data is None:
                 lobby_data = self.contests_scraper.fetch_lobby_data()
 
             if "GameTypes" in lobby_data and len(lobby_data["GameTypes"]) > 0:
-                # Update game_types table
-                game_types = self._update_game_types(lobby_data["GameTypes"])
+                game_types = self._parse_game_types(lobby_data["GameTypes"])
             else:
-                msg = f"No game types found in Lobby for {self.sport}."
-                self.logger.log(level="info", message=msg)
+                self.logger.info(f"No game types found in Lobby for {self.sport}.")
 
-            msg = f"Finished scraping game types for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Finished scraping game types for {self.sport}.")
 
             elapsed_time = datetime.datetime.now() - start_time
-            msg = f"Total time elapsed: {elapsed_time}"
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Total time elapsed: {elapsed_time}")
 
         except Exception as e:
-            msg = f"Failed game types scraper: {e}"
-            self.logger.log(level="error", message=msg)
+            self.logger.error(f"Failed game types scraper: {e}")
             raise e
 
-        finally:
-            if self.logger.warning_logs or self.logger.error_logs:
-                logs = sorted(
-                    list(set(self.logger.warning_logs))
-                    + list(set(self.logger.error_logs))
-                )
-                logs_str = ",".join(logs)
-                self.logger.check_alert_log(
-                    alert_name=f"Error processing game types data for {self.sport}",
-                    alert_description=f"Error processing game types data: {logs_str}",
-                    review_script=self.script_name,
-                    review_table="draftkings.game_types",
-                )
-            self._close_sql_connections()
-
         return game_types
-
-    def _close_sql_connections(self):
-        """Close all database connections."""
-        self.logger.close_logger()
-        self.draftkings_connection.close()
 
 
 def main():
@@ -188,7 +124,8 @@ def main():
     args = parser.parse_args()
 
     scraper = GameTypesScraper(sport=args.sport)
-    scraper.scrape()
+    result = scraper.scrape()
+    print(f"Scraped {len(result)} game types")
 
 
 if __name__ == "__main__":

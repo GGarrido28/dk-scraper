@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Any
 
-from draftkings_scraper.constants import SPORT_MAP, CONTEST_API_URL
+from draftkings_scraper.constants import CONTEST_API_URL
 from draftkings_scraper.http_handler import HTTPHandler
 
 # Module-level HTTP handler for reuse
@@ -11,7 +11,6 @@ _http = HTTPHandler()
 def get_contest_payout(contest_id: int) -> Dict[str, Any]:
     """
     Get payout information for a single contest (for real-time lookups).
-    Does NOT write to DB - just returns the data.
 
     Args:
         contest_id: The DraftKings contest ID.
@@ -41,30 +40,25 @@ def get_contest_payout(contest_id: int) -> Dict[str, Any]:
         {
             "contest_payout_id": f"{contest_id}|{row.get('minPosition')}|{row.get('maxPosition')}",
             "contest_id": contest_id,
-            "minPosition": row.get("minPosition"),
-            "maxPosition": row.get("maxPosition"),
-            "Cash": sum([x.get("value", 0) for x in row.get("payoutDescriptions", [])]),
+            "min_position": row.get("minPosition"),
+            "max_position": row.get("maxPosition"),
+            "cash": sum([x.get("value", 0) for x in row.get("payoutDescriptions", [])]),
         }
         for row in payout_summary
     ]
 
     contest_payouts_ranks = {}
     for payout in payouts:
-        for i in range(payout["minPosition"], payout["maxPosition"] + 1):
-            contest_payouts_ranks[str(i)] = payout["Cash"]
+        for i in range(payout["min_position"], payout["max_position"] + 1):
+            contest_payouts_ranks[str(i)] = payout["cash"]
 
     sport = contest_detail.get("sport", "").lower()
-    sport = SPORT_MAP.get(sport, sport)
 
     return {
         "sport": sport,
         "contest_id": contest_id,
         "payouts": contest_payouts_ranks,
-        "cashing_index": (
-            len(contest_payouts_ranks.keys()) - 1 if contest_payouts_ranks else 0
-        ),
         "num_entries": contest_detail.get("entries", 0),
         "max_entries": contest_detail.get("maximumEntries", 0),
         "entry_fee": contest_detail.get("entryFee", 0),
-        "is_locked": True,
     }

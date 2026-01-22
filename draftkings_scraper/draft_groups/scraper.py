@@ -1,4 +1,3 @@
-import json
 import datetime
 import logging
 import os
@@ -7,12 +6,8 @@ from typing import List, Dict, Any, Optional
 
 from marshmallow import ValidationError
 
-from mg.db.postgres_manager import PostgresManager
-from mg.logging.logger_manager import LoggerManager
-from numpy import rint
-
 from draftkings_scraper.contests import ContestsScraper
-from draftkings_scraper.schemas import DraftGroupSchema, draft_groups
+from draftkings_scraper.schemas import DraftGroupSchema
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 class DraftGroupsScraper:
     """
     Scraper for DraftKings draft groups data.
-    Populates the draftkings.draft_groups table.
+    Returns validated draft group data.
     Uses lobby data from ContestsScraper.
     """
 
@@ -29,51 +24,26 @@ class DraftGroupsScraper:
         self.sport = sport
         self.script_name = os.path.basename(__file__)
         self.script_path = os.path.dirname(__file__)
-        self.logger = LoggerManager(
-            self.script_name,
-            self.script_path,
-            sport=sport,
-            database="defaultdb",
-            schema="draftkings",
-        )
-        self.logger.log_exceptions()
-
-        self.database = "defaultdb"
-        self.schema = "draftkings"
-        self.draftkings_connection = PostgresManager(
-            "digital_ocean", self.database, self.schema, return_logging=False
-        )
+        self.logger = logging.getLogger(__name__)
 
         self.draft_group_schema = DraftGroupSchema()
         self.contests_scraper = ContestsScraper(sport=sport)
         self.draft_group_list = []
 
-    def _update_draft_groups(
+    def _parse_draft_groups(
         self,
         raw_draft_groups: List[Dict[str, Any]],
         game_type_ids: Optional[List[int]] = None,
         slate_types: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """Update draft_groups table with data from DraftKings API.
-
-        Args:
-            raw_draft_groups: Raw draft group data from lobby API.
-            game_type_ids: List of game type IDs to filter by. If empty, no filtering.
-            slate_types: List of slate types to filter by (e.g., ['Main', 'Night']).
-                        If empty, no filtering.
-
-        Returns:
-            list: List of validated draft group dictionaries that were inserted.
-        """
-        msg = f"Updating Draft Groups for {self.sport}."
-        self.logger.log(level="info", message=msg)
+        """Parse and validate draft groups data from DraftKings API."""
+        self.logger.info(f"Parsing Draft Groups for {self.sport}.")
 
         draft_groups = []
         validation_errors = []
         self.draft_group_list = []
 
         for draft_group in raw_draft_groups:
-            # Filter by game_type_ids if provided
             if game_type_ids and draft_group["GameTypeId"] not in game_type_ids:
                 continue
 
@@ -81,7 +51,6 @@ class DraftGroupsScraper:
             if contest_start_time_suffix:
                 contest_start_time_suffix = contest_start_time_suffix.strip()
 
-            # Filter by slate_types if provided
             if slate_types and contest_start_time_suffix not in slate_types:
                 continue
 
@@ -119,24 +88,12 @@ class DraftGroupsScraper:
                         "errors": err.messages,
                     }
                 )
-                msg = f"Validation error for draft_group {draft_group['DraftGroupId']}: {err.messages}"
-                self.logger.log(level="warning", message=msg)
+                self.logger.warning(f"Validation error for draft_group {draft_group['DraftGroupId']}: {err.messages}")
 
         if validation_errors:
-            msg = f"Skipped {len(validation_errors)} draft groups due to validation errors."
-            self.logger.log(level="warning", message=msg)
+            self.logger.warning(f"Skipped {len(validation_errors)} draft groups due to validation errors.")
 
-        if draft_groups:
-            draft_group_cols = list(draft_groups[0].keys())
-            self.draftkings_connection.insert_rows(
-                "draft_groups",
-                draft_group_cols,
-                draft_groups,
-                contains_dicts=True,
-                update=True,
-            )
-            msg = f"Updated {len(draft_groups)} draft groups for {self.sport}."
-            self.logger.log(level="info", message=msg)
+        self.logger.info(f"Parsed {len(draft_groups)} draft groups for {self.sport}.")
 
         return draft_groups
 
@@ -155,60 +112,36 @@ class DraftGroupsScraper:
             slate_types: List of slate types to filter by. If empty/None, no filtering.
 
         Returns:
-            list: List of validated draft group dictionaries that were inserted.
+            list: List of validated draft group dictionaries.
         """
         start_time = datetime.datetime.now()
         draft_groups = []
 
         try:
-            msg = f"Starting draft groups scraper for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Starting draft groups scraper for {self.sport}.")
 
             if lobby_data is None:
                 lobby_data = self.contests_scraper.fetch_lobby_data()
 
             if "DraftGroups" in lobby_data and len(lobby_data["DraftGroups"]) > 0:
-                draft_groups = self._update_draft_groups(
+                draft_groups = self._parse_draft_groups(
                     lobby_data["DraftGroups"],
                     game_type_ids=game_type_ids,
                     slate_types=slate_types,
                 )
             else:
-                msg = f"No draft groups found in Lobby for {self.sport}."
-                self.logger.log(level="info", message=msg)
+                self.logger.info(f"No draft groups found in Lobby for {self.sport}.")
 
-            msg = f"Finished scraping draft groups for {self.sport}."
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Finished scraping draft groups for {self.sport}.")
 
             elapsed_time = datetime.datetime.now() - start_time
-            msg = f"Total time elapsed: {elapsed_time}"
-            self.logger.log(level="info", message=msg)
+            self.logger.info(f"Total time elapsed: {elapsed_time}")
 
         except Exception as e:
-            msg = f"Failed draft groups scraper: {e}"
-            self.logger.log(level="error", message=msg)
+            self.logger.error(f"Failed draft groups scraper: {e}")
             raise e
 
-        finally:
-            if self.logger.warning_logs or self.logger.error_logs:
-                logs = sorted(
-                    list(set(self.logger.warning_logs))
-                    + list(set(self.logger.error_logs))
-                )
-                logs_str = ",".join(logs)
-                self.logger.check_alert_log(
-                    alert_name=f"Error processing draft groups data for {self.sport}",
-                    alert_description=f"Error processing draft groups data: {logs_str}",
-                    review_script=self.script_name,
-                    review_table="draftkings.draft_groups",
-                )
-            self._close_sql_connections()
-
         return draft_groups
-
-    def _close_sql_connections(self):
-        self.logger.close_logger()
-        self.draftkings_connection.close()
 
 
 def main():
@@ -219,7 +152,8 @@ def main():
     args = parser.parse_args()
 
     scraper = DraftGroupsScraper(sport=args.sport)
-    scraper.scrape()
+    result = scraper.scrape()
+    print(f"Scraped {len(result)} draft groups")
 
 
 if __name__ == "__main__":
