@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 
 from draftkings_scraper.contests import ContestsScraper
 from draftkings_scraper.game_types import GameTypesScraper
+from draftkings_scraper.game_sets import GameSetsScraper
 from draftkings_scraper.draft_groups import DraftGroupsScraper
 from draftkings_scraper.payout import PayoutScraper
 from draftkings_scraper.player_salary import PlayerSalaryScraper
@@ -23,8 +24,9 @@ class DraftKingsOrchestrator:
     2. Scrape draft groups (filtered by game_type_ids and slate_types)
     3. Scrape contests (filtered by draft_group_ids from step 2)
     4. Scrape game types
-    5. Scrape payouts (for contest_ids from step 3)
-    6. Scrape player salaries (for draft_group_ids from step 2)
+    5. Scrape game sets (competitions and game styles)
+    6. Scrape payouts (for contest_ids from step 3)
+    7. Scrape player salaries (for draft_group_ids from step 2)
     """
 
     def __init__(self, sport: str):
@@ -45,6 +47,7 @@ class DraftKingsOrchestrator:
         slate_types: Optional[List[str]] = None,
         skip_contests: bool = False,
         skip_game_types: bool = False,
+        skip_game_sets: bool = False,
         skip_draft_groups: bool = False,
         skip_payouts: bool = False,
         skip_player_salaries: bool = False,
@@ -57,6 +60,7 @@ class DraftKingsOrchestrator:
             slate_types: List of slate types to filter draft groups by.
             skip_contests: Skip contests scraping
             skip_game_types: Skip game types scraping
+            skip_game_sets: Skip game sets scraping
             skip_draft_groups: Skip draft groups scraping
             skip_payouts: Skip payouts scraping
             skip_player_salaries: Skip player salaries scraping
@@ -69,6 +73,7 @@ class DraftKingsOrchestrator:
             "sport": self.sport,
             "contests": [],
             "game_types": [],
+            "game_sets": [],
             "draft_groups": [],
             "payouts": [],
             "player_salaries": [],
@@ -139,6 +144,20 @@ class DraftKingsOrchestrator:
                     self.logger.error(f"Error scraping game types: {e}")
                     results["errors"].append({"stage": "game_types", "error": str(e)})
 
+            if not skip_game_sets:
+                try:
+                    self.logger.info("Scraping game sets...")
+
+                    game_sets_scraper = GameSetsScraper(sport=self.sport)
+                    results["game_sets"] = game_sets_scraper.scrape(
+                        lobby_data=lobby_data
+                    )
+
+                    self.logger.info(f"Scraped {len(results['game_sets'])} game sets")
+                except Exception as e:
+                    self.logger.error(f"Error scraping game sets: {e}")
+                    results["errors"].append({"stage": "game_sets", "error": str(e)})
+
             if not skip_payouts and contest_ids:
                 try:
                     self.logger.info(f"Scraping payouts for {len(contest_ids)} contests...")
@@ -184,6 +203,7 @@ def run_all_sports(
     slate_types: Optional[List[str]] = None,
     skip_contests: bool = False,
     skip_game_types: bool = False,
+    skip_game_sets: bool = False,
     skip_draft_groups: bool = False,
     skip_payouts: bool = False,
     skip_player_salaries: bool = False,
@@ -197,6 +217,7 @@ def run_all_sports(
         slate_types: List of slate types to filter by.
         skip_contests: Skip contests scraping
         skip_game_types: Skip game types scraping
+        skip_game_sets: Skip game sets scraping
         skip_draft_groups: Skip draft groups scraping
         skip_payouts: Skip payouts scraping
         skip_player_salaries: Skip player salaries scraping
@@ -213,6 +234,7 @@ def run_all_sports(
             slate_types=slate_types,
             skip_contests=skip_contests,
             skip_game_types=skip_game_types,
+            skip_game_sets=skip_game_sets,
             skip_draft_groups=skip_draft_groups,
             skip_payouts=skip_payouts,
             skip_player_salaries=skip_player_salaries,
@@ -243,6 +265,9 @@ def main():
         "--skip-game-types", action="store_true", help="Skip game types scraping"
     )
     parser.add_argument(
+        "--skip-game-sets", action="store_true", help="Skip game sets scraping"
+    )
+    parser.add_argument(
         "--skip-draft-groups", action="store_true", help="Skip draft groups scraping"
     )
     parser.add_argument(
@@ -262,12 +287,13 @@ def main():
             sports=sports,
             skip_contests=args.skip_contests,
             skip_game_types=args.skip_game_types,
+            skip_game_sets=args.skip_game_sets,
             skip_draft_groups=args.skip_draft_groups,
             skip_payouts=args.skip_payouts,
             skip_player_salaries=args.skip_player_salaries,
         )
         for sport, result in results.items():
-            logger.info(f"{sport}: Contests={len(result['contests'])}, Game Types={len(result['game_types'])}, Draft Groups={len(result['draft_groups'])}, Payouts={len(result['payouts'])}, Player Salaries={len(result['player_salaries'])}")
+            logger.info(f"{sport}: Contests={len(result['contests'])}, Game Types={len(result['game_types'])}, Game Sets={len(result['game_sets'])}, Draft Groups={len(result['draft_groups'])}, Payouts={len(result['payouts'])}, Player Salaries={len(result['player_salaries'])}")
             if result["errors"]:
                 logger.error(f"{sport} Errors: {result['errors']}")
     elif args.sport:
@@ -275,11 +301,12 @@ def main():
         result = orchestrator.run(
             skip_contests=args.skip_contests,
             skip_game_types=args.skip_game_types,
+            skip_game_sets=args.skip_game_sets,
             skip_draft_groups=args.skip_draft_groups,
             skip_payouts=args.skip_payouts,
             skip_player_salaries=args.skip_player_salaries,
         )
-        logger.info(f"{args.sport}: Contests={len(result['contests'])}, Game Types={len(result['game_types'])}, Draft Groups={len(result['draft_groups'])}, Payouts={len(result['payouts'])}, Player Salaries={len(result['player_salaries'])}")
+        logger.info(f"{args.sport}: Contests={len(result['contests'])}, Game Types={len(result['game_types'])}, Game Sets={len(result['game_sets'])}, Draft Groups={len(result['draft_groups'])}, Payouts={len(result['payouts'])}, Player Salaries={len(result['player_salaries'])}")
         if result["errors"]:
             logger.error(f"{args.sport} Errors: {result['errors']}")
     else:

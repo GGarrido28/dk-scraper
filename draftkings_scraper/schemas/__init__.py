@@ -2,6 +2,7 @@ from .contests import ContestSchema
 from .contest import ContestEntrySchema
 from .contest_history import ContestHistorySchema
 from .draft_groups import DraftGroupSchema
+from .game_sets import GameSetSchema, CompetitionSchema, GameStyleSchema
 from .game_types import GameTypeSchema
 from .payout import PayoutSchema
 from .player_salary import PlayerSalarySchema
@@ -12,6 +13,9 @@ __all__ = [
     "ContestEntrySchema",
     "ContestHistorySchema",
     "DraftGroupSchema",
+    "GameSetSchema",
+    "CompetitionSchema",
+    "GameStyleSchema",
     "GameTypeSchema",
     "PayoutSchema",
     "PlayerSalarySchema",

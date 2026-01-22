@@ -1,8 +1,8 @@
 # DraftKings Scraper
 
-A modular Python scraper for collecting DraftKings fantasy sports data. Scrapes contests, draft groups, game types, payouts, player salaries, and contest entries - returning structured data for further processing.
+A modular Python scraper for collecting DraftKings fantasy sports data. Scrapes contests, draft groups, game types, game sets, payouts, player salaries, and contest entries - returning structured data for further processing.
 
-**Version:** 3.0.0
+**Version:** 3.1.0
 **License:** MIT
 **Python:** >=3.11
 
@@ -95,6 +95,7 @@ draftkings-scraper/
 │   │   ├── contests.py          # Contests schema
 │   │   ├── contest_history.py   # Contest history schema
 │   │   ├── draft_groups.py      # Draft groups schema
+│   │   ├── game_sets.py         # Game sets, competitions, game styles schemas
 │   │   ├── game_types.py        # Game types schema
 │   │   ├── payout.py            # Payout schema
 │   │   ├── player_salary.py     # Player salary schema
@@ -102,6 +103,8 @@ draftkings-scraper/
 │   ├── contests/                # Contests scraper
 │   │   └── scraper.py
 │   ├── game_types/              # Game types scraper
+│   │   └── scraper.py
+│   ├── game_sets/               # Game sets scraper (competitions, game styles)
 │   │   └── scraper.py
 │   ├── draft_groups/            # Draft groups scraper
 │   │   └── scraper.py
@@ -140,8 +143,9 @@ python orchestrator.py MLB --skip-payouts --skip-player-salaries
 2. Scrape draft groups (filtered by game_type_ids and slate_types)
 3. Scrape contests (filtered by draft_group_ids from step 2)
 4. Scrape game types
-5. Scrape payouts (for contest_ids from step 3)
-6. Scrape player salaries (for draft_group_ids from step 2)
+5. Scrape game sets (competitions and game styles)
+6. Scrape payouts (for contest_ids from step 3)
+7. Scrape player salaries (for draft_group_ids from step 2)
 
 ### Individual Scrapers
 
@@ -159,6 +163,10 @@ python -m draftkings_scraper.game_types.scraper MLB
 
 # Draft Groups
 python -m draftkings_scraper.draft_groups.scraper MMA
+
+# Game Sets (competitions and game styles)
+python -m draftkings_scraper.game_sets.scraper CS
+python -m draftkings_scraper.game_sets.scraper CS --tags Featured
 
 # Payouts (requires contest IDs)
 python -m draftkings_scraper.payout.scraper NFL --contest-ids 123456,789012
@@ -178,6 +186,7 @@ python -m draftkings_scraper.contest_entry_history.scraper
 ```python
 from draftkings_scraper.contests import ContestsScraper
 from draftkings_scraper.draft_groups import DraftGroupsScraper
+from draftkings_scraper.game_sets import GameSetsScraper
 from draftkings_scraper.payout import PayoutScraper
 from draftkings_scraper.player_salary import PlayerSalaryScraper
 
@@ -200,6 +209,15 @@ payouts = payout_scraper.scrape(contest_ids=contest_ids)
 draft_group_ids = [dg['draft_group_id'] for dg in draft_groups]
 salary_scraper = PlayerSalaryScraper(sport="NFL")
 salaries = salary_scraper.scrape(draft_group_ids=draft_group_ids)
+
+# Scrape game sets (competitions and game styles)
+game_sets_scraper = GameSetsScraper(sport="CS")
+game_sets = game_sets_scraper.scrape(lobby_data=lobby_data)
+
+for gs in game_sets:
+    print(f"Game Set: {gs['contest_start_time_suffix']}")
+    for comp in gs['competitions']:
+        print(f"  {comp['away_team_name']} @ {comp['home_team_name']}")
 ```
 
 #### Using the Orchestrator Programmatically
@@ -216,6 +234,7 @@ result = orchestrator.run(
 
 print(f"Contests: {len(result['contests'])}")
 print(f"Draft Groups: {len(result['draft_groups'])}")
+print(f"Game Sets: {len(result['game_sets'])}")
 print(f"Payouts: {len(result['payouts'])}")
 print(f"Player Salaries: {len(result['player_salaries'])}")
 
@@ -316,6 +335,34 @@ All scrapers return validated Python dictionaries. Example structures:
 }
 ```
 
+### Game Set
+```python
+{
+    'game_set_key': 'BE99BF41A73B693FD89309EACB9E81DA',
+    'contest_start_time_suffix': ' (BLAST Bounty)',
+    'tag': 'Featured',
+    'competitions': [
+        {
+            'game_id': 6162971,
+            'away_team_name': 'Liquid',
+            'home_team_name': 'Falcons',
+            'start_date': '2026-01-22T14:55:00.0000000Z',
+            'status': 'Pre-Game',
+            'sport': 'CS',
+            # ... additional fields
+        }
+    ],
+    'game_styles': [
+        {
+            'game_style_id': 84,
+            'name': 'Classic',
+            'description': 'Create a 6-player lineup...',
+            # ... additional fields
+        }
+    ]
+}
+```
+
 ## Architecture
 
 ### Design Principles
@@ -350,9 +397,11 @@ This project uses semantic versioning (MAJOR.MINOR.PATCH):
 - **MINOR** - New features (backward compatible)
 - **PATCH** - Bug fixes
 
-Current version: **3.0.0**
+Current version: **3.1.0**
 
 ### Changelog
+
+**3.1.0** - Added GameSetsScraper for scraping game sets with competitions and game styles.
 
 **3.0.0** - Removed database dependencies. Scrapers now return data instead of inserting to database.
 
