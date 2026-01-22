@@ -64,7 +64,7 @@ class ContestsScraper:
         """Parse and validate contest data."""
         self.contest_id_list = []
         contest_attributes_map = {
-            "IsGuaranteed": "guranteed",
+            "IsGuaranteed": "guaranteed",
             "IsStarred": "starred",
             "IsDoubleUp": "double_up",
             "IsFiftyfifty": "fifty_fifty",
@@ -97,7 +97,7 @@ class ContestsScraper:
             for att in contest_attributes_map:
                 atts_dict[contest_attributes_map.get(att)] = att in c_atts
 
-            if not atts_dict["guranteed"]:
+            if not atts_dict["guaranteed"]:
                 continue
 
             if contest["m"] <= 100 and contest["a"] <= 25:

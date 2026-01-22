@@ -25,7 +25,7 @@ class ContestSchema(Schema):
     po = fields.Float(allow_none=True)
 
     # Boolean attributes
-    guranteed = fields.Boolean(allow_none=True)
+    guaranteed = fields.Boolean(allow_none=True)
     starred = fields.Boolean(allow_none=True)
     double_up = fields.Boolean(allow_none=True)
     fifty_fifty = fields.Boolean(allow_none=True)
