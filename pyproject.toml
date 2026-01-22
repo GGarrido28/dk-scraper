@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "draftkings_scraper"
-version = "1.0.0"
+version = "1.0.1"
 authors = [
     {name = "Gabe Garrido", email = "gabriel.garrido28@gmail.com"},
 ]
@@ -22,7 +22,7 @@ dependencies = [
     "beautifulsoup4>=4.11.1",
     "marshmallow>=3.20.0",
     "pytz>=2023.3",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.0.1",
     "selenium>=3.141.0",
     "webdriver-manager>=3.8.6",
     "tqdm>=4.67.1",

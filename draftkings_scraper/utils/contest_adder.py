@@ -70,7 +70,7 @@ class ContestAdder:
     ) -> Dict[str, Any]:
         """Parse contest using complete lobby data."""
         contest_attributes_map = {
-            "IsGuaranteed": "guranteed",
+            "IsGuaranteed": "guaranteed",
             "IsStarred": "starred",
             "IsDoubleUp": "double_up",
             "IsFiftyfifty": "fifty_fifty",
@@ -132,7 +132,7 @@ class ContestAdder:
                 "prizePool", contest_detail.get("totalPayouts", 0)
             ),
             "attr": attr_dict,
-            "guranteed": "IsGuaranteed" in attr_dict,
+            "guaranteed": "IsGuaranteed" in attr_dict,
             "starred": "IsStarred" in attr_dict,
             "double_up": "IsDoubleUp" in attr_dict,
             "fifty_fifty": "IsFiftyfifty" in attr_dict,
