@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 
 from dotenv import load_dotenv
 
-from draftkings_scraper.utils.helpers import return_last_folder_item, move_file
+from draftkings_scraper.utils.helpers import find_latest_matching_file, move_file
 from draftkings_scraper.constants import CONTEST_STANDINGS_CSV_URL
 
 # Load environment variables from .env file
@@ -173,11 +173,11 @@ class ContestEntriesScraper:
 
         # Move downloaded files to csv_download_directory
         for contest in contest_ids:
-            file_download = return_last_folder_item(self.download_directory, "contest")
+            file_download = find_latest_matching_file(self.download_directory, "contest")
             count = 0
             if file_download is None:
                 while count < 2:
-                    file_download = return_last_folder_item(
+                    file_download = find_latest_matching_file(
                         self.download_directory, "contest"
                     )
                     if file_download is None:
