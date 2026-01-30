@@ -2,7 +2,7 @@
 
 import datetime
 from typing import Dict, Any
-
+import os
 import pytz
 
 
@@ -33,3 +33,24 @@ def convert_datetime(dt_str: str) -> datetime.datetime:
     dt_obj = dt_obj.replace(tzinfo=pytz.utc)
     dt_obj = dt_obj.astimezone(pytz.timezone("US/Eastern"))
     return dt_obj
+
+
+def return_last_folder_item(path, file_name):
+    mtime = lambda f: os.stat(os.path.join(path, f)).st_mtime
+    file_list = list(sorted(os.listdir(path), key=mtime, reverse=True))
+    for i in file_list:
+        if file_name in i:
+            file = i
+            return file
+        else:
+            return print(file_name + " not found")
+        
+
+def move_file(file, source_directory, target_directory):
+    file_address = source_directory / file
+    target_file_address = target_directory / file
+    if target_file_address.exists():
+        target_file_address.unlink()
+        file_address.rename(target_file_address)
+    else:
+        file_address.rename(target_file_address)
