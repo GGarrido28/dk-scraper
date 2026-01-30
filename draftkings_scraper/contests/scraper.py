@@ -220,7 +220,7 @@ class ContestsScraper:
                 "contest_id": contest_id,
                 "is_final": is_contest_final(contest_detail),
                 "is_cancelled": is_contest_cancelled(contest_detail),
-                "start_time": convert_datetime(contest_detail["contestStartTime"]),
+                "start_time": convert_datetime(contest_detail.get("contestStartTime", "")),
             }
 
             if "name" in contest_detail:
