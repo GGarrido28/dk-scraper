@@ -18,6 +18,7 @@ from draftkings_scraper.utils.helpers import (
     is_contest_final,
     is_contest_cancelled,
     convert_datetime,
+    parse_ms_json_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,7 @@ class ContestsScraper:
                 "contest_date": contest["sdstring"],
                 "contest_url": "https://www.draftkings.com/draft/contest/"
                 + str(contest["id"]),
+                "start_time": parse_ms_json_date(contest["sd"]),
                 "is_downloaded": False,
             }
             c.update(atts_dict)
