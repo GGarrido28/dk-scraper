@@ -2,7 +2,7 @@
 
 A modular Python scraper for collecting DraftKings fantasy sports data. Scrapes contests, draft groups, game types, game sets, payouts, player salaries, and contest entries - returning structured data for further processing.
 
-**Version:** 1.1.0
+**Version:** 1.1.1
 **License:** MIT
 **Python:** >=3.11
 
@@ -397,7 +397,7 @@ This project uses semantic versioning (MAJOR.MINOR.PATCH):
 - **MINOR** - New features (backward compatible)
 - **PATCH** - Bug fixes
 
-Current version: **1.1.0**
+Current version: **1.1.1**
 
 ## License
 

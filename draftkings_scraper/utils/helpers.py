@@ -2,6 +2,7 @@
 
 import datetime
 import os
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -36,6 +37,25 @@ def convert_datetime(dt_str: str) -> Optional[datetime.datetime]:
     # Remove fractional seconds if present
     dt_str = dt_str.split(".")[0]
     return datetime.datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
+
+
+def parse_ms_json_date(date_str: str) -> Optional[datetime.datetime]:
+    """
+    Parse Microsoft JSON Date format to UTC datetime object (naive).
+
+    Args:
+        date_str: Microsoft JSON Date string (e.g., "/Date(1769864100000)/").
+
+    Returns:
+        Naive datetime object (UTC), or None if input is empty or invalid.
+    """
+    if not date_str:
+        return None
+    match = re.search(r"/Date\((\d+)\)/", date_str)
+    if not match:
+        return None
+    timestamp_ms = int(match.group(1))
+    return datetime.datetime.fromtimestamp(timestamp_ms / 1000, tz=datetime.timezone.utc).replace(tzinfo=None)
 
 
 def find_latest_matching_file(path: str, file_name: str) -> Optional[str]:
