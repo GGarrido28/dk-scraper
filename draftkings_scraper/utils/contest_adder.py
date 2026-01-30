@@ -309,6 +309,37 @@ class ContestAdder:
             result["message"] = str(e)
             return result
 
+    def get_contest_status(self, contest_id: int) -> str:
+        """
+        Get the status of a contest by ID.
+
+        Args:
+            contest_id: The DraftKings contest ID to check.
+
+        Returns:
+            str: Status of the contest ('final', 'cancelled', 'upcoming', 'unknown').
+        """
+        try:
+            contest_response = self.http.get(self.contest_url % contest_id)
+            contest_response.raise_for_status()
+            contest_data = json.loads(contest_response.text)
+
+            if not contest_data or "contestDetail" not in contest_data:
+                self.logger.warning(f"No contest data found for contest {contest_id}")
+                return "unknown"
+
+            contest_detail = contest_data["contestDetail"]
+
+            if is_contest_cancelled(contest_detail):
+                return "cancelled"
+            elif is_contest_final(contest_detail):
+                return "final"
+            else:
+                return "upcoming"
+
+        except Exception as e:
+            self.logger.error(f"Error fetching contest status for {contest_id}: {str(e)}")
+            return "unknown"
 
 def main():
     """CLI entry point for fetching a contest."""

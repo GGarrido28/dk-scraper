@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-import pytz
-
 
 def is_contest_final(contest_detail: Dict[str, Any]) -> bool:
     """Check if contest is in final state (completed or cancelled)."""
@@ -20,21 +18,24 @@ def is_contest_cancelled(contest_detail: Dict[str, Any]) -> bool:
     return status.lower().strip() == "cancelled"
 
 
-def convert_datetime(dt_str: str) -> datetime.datetime:
+def convert_datetime(dt_str: str) -> Optional[datetime.datetime]:
     """
-    Convert DraftKings datetime string to Eastern timezone.
+    Convert DraftKings datetime string to UTC datetime object (naive).
 
     Args:
-        dt_str: ISO format datetime string from DraftKings API.
+        dt_str: ISO format datetime string from DraftKings API (e.g., "2026-01-22T14:55:00.0000000Z").
 
     Returns:
-        datetime object in US/Eastern timezone.
+        Naive datetime object (UTC assumed), or None if input is empty.
     """
+    if not dt_str:
+        return None
+    # Remove trailing Z (UTC indicator) if present
+    if dt_str.endswith("Z"):
+        dt_str = dt_str[:-1]
+    # Remove fractional seconds if present
     dt_str = dt_str.split(".")[0]
-    dt_obj = datetime.datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
-    dt_obj = dt_obj.replace(tzinfo=pytz.utc)
-    dt_obj = dt_obj.astimezone(pytz.timezone("US/Eastern"))
-    return dt_obj
+    return datetime.datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
 
 
 def find_latest_matching_file(path: str, file_name: str) -> Optional[str]:
