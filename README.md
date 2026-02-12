@@ -2,7 +2,7 @@
 
 A modular Python scraper for collecting DraftKings fantasy sports data. Scrapes contests, draft groups, game types, game sets, payouts, player salaries, and contest entries - returning structured data for further processing.
 
-**Version:** 1.1.1
+**Version:** 1.2.0
 **License:** MIT
 **Python:** >=3.11
 
@@ -99,7 +99,8 @@ draftkings-scraper/
 │   │   ├── game_types.py        # Game types schema
 │   │   ├── payout.py            # Payout schema
 │   │   ├── player_salary.py     # Player salary schema
-│   │   └── player_results.py    # Player results schema
+│   │   ├── player_results.py    # Player results schema
+│   │   └── sport.py             # Sport schema
 │   ├── contests/                # Contests scraper
 │   │   └── scraper.py
 │   ├── game_types/              # Game types scraper
@@ -111,6 +112,8 @@ draftkings-scraper/
 │   ├── payout/                  # Payout scraper
 │   │   └── scraper.py
 │   ├── player_salary/           # Player salary scraper
+│   │   └── scraper.py
+│   ├── sport/                   # Sports scraper
 │   │   └── scraper.py
 │   ├── contest_entries/         # Contest entries downloader (requires auth)
 │   │   └── scraper.py
@@ -174,6 +177,9 @@ python -m draftkings_scraper.payout.scraper NFL --contest-ids 123456,789012
 # Player Salaries (requires draft group IDs)
 python -m draftkings_scraper.player_salary.scraper NFL --draft-group-ids 12345,67890
 
+# Sports (all available DraftKings sports)
+python -m draftkings_scraper.sport.scraper
+
 # Contest Entries CSV Download (requires authentication)
 python -m draftkings_scraper.contest_entries.scraper --contest-ids 123456,789012
 
@@ -189,6 +195,11 @@ from draftkings_scraper.draft_groups import DraftGroupsScraper
 from draftkings_scraper.game_sets import GameSetsScraper
 from draftkings_scraper.payout import PayoutScraper
 from draftkings_scraper.player_salary import PlayerSalaryScraper
+from draftkings_scraper.sport import SportScraper
+
+# Scrape all available sports
+sport_scraper = SportScraper()
+sports = sport_scraper.scrape()
 
 # Scrape contests and get lobby data
 contests_scraper = ContestsScraper(sport="NFL")
@@ -335,6 +346,19 @@ All scrapers return validated Python dictionaries. Example structures:
 }
 ```
 
+### Sport
+```python
+{
+    'sport_id': 4,
+    'full_name': 'Basketball',
+    'sort_order': 1,
+    'has_public_contests': True,
+    'is_enabled': True,
+    'region_full_sport_name': 'Basketball',
+    'region_abbreviated_sport_name': 'NBA',
+}
+```
+
 ### Game Set
 ```python
 {
@@ -397,7 +421,7 @@ This project uses semantic versioning (MAJOR.MINOR.PATCH):
 - **MINOR** - New features (backward compatible)
 - **PATCH** - Bug fixes
 
-Current version: **1.1.1**
+Current version: **1.2.0**
 
 ## License
 

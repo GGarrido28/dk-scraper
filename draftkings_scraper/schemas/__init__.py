@@ -7,6 +7,7 @@ from .game_types import GameTypeSchema
 from .payout import PayoutSchema
 from .player_salary import PlayerSalarySchema
 from .player_results import PlayerResultsSchema
+from .sport import SportSchema
 
 __all__ = [
     "ContestSchema",
@@ -20,4 +21,5 @@ __all__ = [
     "PayoutSchema",
     "PlayerSalarySchema",
     "PlayerResultsSchema",
+    "SportSchema",
 ]
