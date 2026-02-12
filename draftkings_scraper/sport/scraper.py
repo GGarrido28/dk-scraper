@@ -1,6 +1,5 @@
 import datetime
 import logging
-import argparse
 from typing import List, Dict, Any
 
 from marshmallow import ValidationError
@@ -35,13 +34,13 @@ class SportScraper:
 
         for sport in raw_sports:
             s = {
-                "sport_id": sport["sportId"],
-                "full_name": sport["fullName"],
-                "sort_order": sport["sortOrder"],
-                "has_public_contests": sport["hasPublicContests"],
-                "is_enabled": sport["isEnabled"],
-                "region_full_sport_name": sport["regionFullSportName"],
-                "region_abbreviated_sport_name": sport["regionAbbreviatedSportName"],
+                "sport_id": sport.get("sportId"),
+                "full_name": sport.get("fullName"),
+                "sort_order": sport.get("sortOrder"),
+                "has_public_contests": sport.get("hasPublicContests"),
+                "is_enabled": sport.get("isEnabled"),
+                "region_full_sport_name": sport.get("regionFullSportName"),
+                "region_abbreviated_sport_name": sport.get("regionAbbreviatedSportName"),
             }
 
             try:
@@ -49,10 +48,10 @@ class SportScraper:
                 sports.append(validated_sport)
             except ValidationError as err:
                 validation_errors.append(
-                    {"sport_id": sport["sportId"], "errors": err.messages}
+                    {"sport_id": sport.get("sportId"), "errors": err.messages}
                 )
                 self.logger.warning(
-                    f"Validation error for sport {sport['sportId']}: {err.messages}"
+                    f"Validation error for sport {sport.get('sportId')}: {err.messages}"
                 )
 
         if validation_errors:
@@ -102,12 +101,6 @@ class SportScraper:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Scrape DraftKings sports data."
-    )
-
-    args = parser.parse_args()
-
     scraper = SportScraper()
     result = scraper.scrape()
     print(f"Scraped {len(result)} sports")
